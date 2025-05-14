@@ -337,7 +337,7 @@ class TabContent(QWidget):
         file_name, _ = QFileDialog.getSaveFileName(self, "Save Output", "", "CSV Files (*.csv);;All Files (*)")
         if file_name:
             if not file_name.lower().endswith('.csv'):
-                file_name += '.csv'
+                file_name += '.txt'
             try:
                 with open(file_name, 'w', encoding='utf-8') as f:
                     writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
@@ -488,20 +488,20 @@ class TabContent(QWidget):
             self.ui.StatusTextBox.appendPlainText("Guest:guest authentication failed. Authentication required.")
             auth_status = "enabled"
 
-        # If guest:guest fails, try without credentials
-        parameters.credentials = None
+        # Second attempt: Try with empty credentials to simulate no-auth
+        parameters.credentials = pika.PlainCredentials('', '')
         try:
-            self.ui.StatusTextBox.appendPlainText(f"Connecting to {host}:{port} without credentials...")
+            self.ui.StatusTextBox.appendPlainText(f"Connecting to {host}:{port} with empty credentials...")
             connection = pika.BlockingConnection(parameters)
             server_info = connection._impl.server_properties
             info = f"{server_info.get('product', 'unknown')} {server_info.get('version', 'unknown')}"
             auth_status = "disabled"
             defaults = "N/A"
-            self.ui.StatusTextBox.appendPlainText(f"Connected successfully without credentials. Server: {info}")
+            self.ui.StatusTextBox.appendPlainText(f"Connected successfully without authentication. Server: {info}")
             connection.close()
             return defaults, auth_status, info
         except pika.exceptions.AMQPConnectionError as e:
-            self.ui.StatusTextBox.appendPlainText(f"No-credential connection failed: {e}")
+            self.ui.StatusTextBox.appendPlainText(f"Empty credentials connection failed: {e}")
             if "connection refused" in str(e).lower():
                 raise Exception("Connection refused")
         except pika.exceptions.AuthenticationError:
