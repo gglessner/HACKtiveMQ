@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from PySide6.QtWidgets import QWidget, QPlainTextEdit, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame, QGridLayout, QFileDialog, QSpacerItem, QSizePolicy, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtWidgets import QApplication, QWidget, QPlainTextEdit, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame, QGridLayout, QFileDialog, QSpacerItem, QSizePolicy, QTableWidget, QTableWidgetItem, QHeaderView
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 import socket
@@ -26,10 +26,10 @@ import base64
 import re
 
 # Define the version number at the top
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # Define the tab label for the tab widget
-TAB_LABEL = f"WEBscan v{VERSION}"
+TAB_LABEL = f"ActiveWEBscan v{VERSION}"
 
 class Ui_TabContent:
     def setupUi(self, widget):
@@ -202,10 +202,10 @@ class Ui_TabContent:
 
     def retranslateUi(self, widget):
         self.label_3.setText(f"""
- _ _ _ _____ _____                 
-| | | |   __| __  |___ ___ ___ ___ 
-| | | |   __| __ -|_ -|  _| .'|   |
-|_____|_____|_____|___|___|__,|_|_|
+ _____     _   _         _ _ _ _____ _____                 
+|  _  |___| |_|_|_ _ ___| | | |   __| __  |___ ___ ___ ___ 
+|     |  _|  _| | | | -_| | | |   __| __ -|_ -|  _| .'|   |
+|__|__|___|_| |_|\_/|___|_____|_____|_____|___|___|__,|_|_|
 
  Version: {VERSION}""")
         self.PortLabel.setText("Port:")
@@ -422,6 +422,8 @@ class TabContent(QWidget):
                     except ValueError:
                         pass
                 self.ui.OutputTable.setItem(row_count, col, item)
+                self.ui.OutputTable.scrollToBottom()
+                QApplication.processEvents() # Force UI update
 
             self.ui.StatusTextBox.appendPlainText(f"Completed scan for {host}")
 
