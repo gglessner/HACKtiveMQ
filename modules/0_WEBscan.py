@@ -422,10 +422,10 @@ class TabContent(QWidget):
                     except ValueError:
                         pass
                 self.ui.OutputTable.setItem(row_count, col, item)
-                self.ui.OutputTable.scrollToBottom()
-                QApplication.processEvents() # Force UI update
 
             self.ui.StatusTextBox.appendPlainText(f"Completed scan for {host}")
+            self.ui.OutputTable.scrollToBottom()
+            QApplication.processEvents() # Force UI update
 
         self.ui.StatusTextBox.appendPlainText("\nScan completed.")
 
