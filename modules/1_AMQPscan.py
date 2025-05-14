@@ -25,7 +25,7 @@ import ssl
 import socket
 
 # Define the version number at the top
-VERSION = "1.0.1"
+VERSION = "1.0.0"
 
 # Define the tab label for the tab widget
 TAB_LABEL = f"AMQPscan v{VERSION}"
