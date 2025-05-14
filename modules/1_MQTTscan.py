@@ -1,4 +1,4 @@
-# AMQPscan - part of the HACKtiveMQ Suite
+# MQTTscan - part of the HACKtiveMQ Suite
 # Copyright (C) 2025 Garland Glessner - gglesner@gmail.com
 #
 # This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
 from PySide6.QtWidgets import QApplication, QWidget, QPlainTextEdit, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame, QGridLayout, QFileDialog, QSpacerItem, QSizePolicy, QTableWidget, QTableWidgetItem, QHeaderView
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
-import pika
+import paho.mqtt.client as mqtt
 import datetime
 import csv
 import os
@@ -28,11 +28,11 @@ import socket
 VERSION = "1.0.0"
 
 # Define the tab label for the tab widget
-TAB_LABEL = f"AMQPscan v{VERSION}"
+TAB_LABEL = f"MQTTscan v{VERSION}"
 
 class Ui_TabContent:
     def setupUi(self, widget):
-        """Set up the UI components for the AMQPscan tab."""
+        """Set up the UI components for the MQTTscan tab."""
         widget.setObjectName("TabContent")
 
         # Main vertical layout with reduced spacing
@@ -75,7 +75,7 @@ class Ui_TabContent:
         self.horizontalLayout_5.addWidget(self.PortLabel)
 
         self.PortLine = QLineEdit(self.frame_11)
-        self.PortLine.setText("5672")  # Default AMQP port
+        self.PortLine.setText("1883")  # Default MQTT port
         self.horizontalLayout_5.addWidget(self.PortLine)
 
         self.gridLayout_2.addWidget(self.frame_11, 0, 0, 1, 1)
@@ -202,10 +202,10 @@ class Ui_TabContent:
     def retranslateUi(self, widget):
         self.label_3.setText(f"""
  _____ _____ _____ _____                 
-|  _  |     |     |  _  |___ ___ ___ ___ 
-|     | | | |  |  |   __|_ -|  _| .'|   |
-|__|__|_|_|_|__  _|__|  |___|___|__,|_|_|
-               |__|                      
+|     |     |_   _|_   _|___ ___ ___ ___ 
+| | | |  |  | | |   | | |_ -|  _| .'|   |
+|_|_|_|__  _| |_|   |_| |___|___|__,|_|_|
+         |__|                            
 
  Version: {VERSION}""")
         self.PortLabel.setText("Port:")
@@ -373,7 +373,7 @@ class TabContent(QWidget):
         self.ui.OutputTable.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
 
     def scan_hosts(self):
-        """Scan each host in the HostsTextBox for AMQP service details."""
+        """Scan each host in the HostsTextBox for MQTT service details."""
         self.clear_output()
 
         port_input = self.ui.PortLine.text().strip()
@@ -430,8 +430,8 @@ class TabContent(QWidget):
         self.ui.StatusTextBox.appendPlainText("\nScan completed.")
 
     def load_credentials(self):
-        """Load username:password pairs from amqp-defaults.txt."""
-        credentials_file = os.path.join("modules", "amqp-defaults.txt")
+        """Load username:password pairs from mqtt-defaults.txt."""
+        credentials_file = os.path.join("modules", "mqtt-defaults.txt")
         credentials = []
         try:
             if not os.path.exists(credentials_file):
@@ -450,65 +450,61 @@ class TabContent(QWidget):
             return None
 
     def scan_host(self, host, port, protocol):
-        """Scan a single host for AMQP service details."""
+        """Scan a single host for MQTT service details."""
         defaults = "N/A"
         auth_status = "unknown"
         info = "unknown"
+        connection_status = [False]  # List to store connection status (mutable for callback)
 
-        # Set up connection parameters
-        parameters = pika.ConnectionParameters(
-            host=host,
-            port=port,
-            credentials=pika.PlainCredentials('guest', 'guest'),  # Default attempt
-            socket_timeout=5
-        )
+        def on_connect(client, userdata, flags, rc):
+            """Callback for MQTT connection result."""
+            if rc == 0:
+                connection_status[0] = True
+                self.ui.StatusTextBox.appendPlainText("Connection successful")
+            elif rc == 5:
+                self.ui.StatusTextBox.appendPlainText("Authentication failed")
+                connection_status[0] = False
+            else:
+                self.ui.StatusTextBox.appendPlainText(f"Connection failed with code {rc}")
+                connection_status[0] = False
+
+        # Set up MQTT client
+        client = mqtt.Client(client_id="scanner")
+        client.on_connect = on_connect
+        client.reconnect_delay_set(min_delay=1, max_delay=5)
 
         if protocol == "ssl":
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
-            parameters.ssl_options = pika.SSLOptions(ssl_context)
+            client.tls_set_context(ssl_context)
 
-        # First attempt: Try connecting with default guest:guest
-        try:
-            self.ui.StatusTextBox.appendPlainText(f"Connecting to {host}:{port} with guest:guest...")
-            connection = pika.BlockingConnection(parameters)
-            server_info = connection._impl.server_properties  # Get server info
-            info = f"{server_info.get('product', 'unknown')} {server_info.get('version', 'unknown')}"
-            auth_status = "bypassed"
-            defaults = "guest:guest"
-            self.ui.StatusTextBox.appendPlainText(f"Connected successfully with guest:guest. Server: {info}")
-            connection.close()
-            return defaults, auth_status, info
-        except pika.exceptions.AMQPConnectionError as e:
-            self.ui.StatusTextBox.appendPlainText(f"Guest:guest connection failed: {e}")
-            if "connection refused" in str(e).lower():
-                raise Exception("Connection refused")
-        except pika.exceptions.AuthenticationError:
-            self.ui.StatusTextBox.appendPlainText("Guest:guest authentication failed. Authentication required.")
-            auth_status = "enabled"
-
-        # If guest:guest fails, try without credentials
-        parameters.credentials = None
+        # First attempt: Connect without credentials
         try:
             self.ui.StatusTextBox.appendPlainText(f"Connecting to {host}:{port} without credentials...")
-            connection = pika.BlockingConnection(parameters)
-            server_info = connection._impl.server_properties
-            info = f"{server_info.get('product', 'unknown')} {server_info.get('version', 'unknown')}"
-            auth_status = "disabled"
-            defaults = "N/A"
-            self.ui.StatusTextBox.appendPlainText(f"Connected successfully without credentials. Server: {info}")
-            connection.close()
-            return defaults, auth_status, info
-        except pika.exceptions.AMQPConnectionError as e:
+            client.connect(host, port, keepalive=5)
+            client.loop_start()
+            for _ in range(50):  # Wait up to 5 seconds (50 * 0.1s)
+                if connection_status[0]:
+                    break
+                import time
+                time.sleep(0.1)
+            client.loop_stop()
+            client.disconnect()
+
+            if connection_status[0]:
+                auth_status = "disabled"
+                defaults = "N/A"
+                info = "MQTT broker (no version info)"
+                self.ui.StatusTextBox.appendPlainText("Connected successfully without credentials")
+                return defaults, auth_status, info
+        except Exception as e:
             self.ui.StatusTextBox.appendPlainText(f"No-credential connection failed: {e}")
-            if "connection refused" in str(e).lower():
+            if "connection refused" in str(e).lower() or "no route to host" in str(e).lower():
                 raise Exception("Connection refused")
-        except pika.exceptions.AuthenticationError:
-            self.ui.StatusTextBox.appendPlainText("Authentication required. Testing default credentials...")
             auth_status = "enabled"
 
-        # If authentication is required, test credentials from file
+        # If no-credential connection fails, test credentials
         credentials = self.load_credentials()
         if credentials is None:
             defaults = "error"
@@ -517,26 +513,41 @@ class TabContent(QWidget):
 
         successful_creds = []
         for username, password in credentials:
+            connection_status[0] = False
+            client = mqtt.Client(client_id="scanner")
+            client.on_connect = on_connect
+            client.reconnect_delay_set(min_delay=1, max_delay=5)
+            if protocol == "ssl":
+                client.tls_set_context(ssl_context)
+
             try:
                 self.ui.StatusTextBox.appendPlainText(f"Testing credential {username}:{password}...")
-                parameters.credentials = pika.PlainCredentials(username, password)
-                connection = pika.BlockingConnection(parameters)
-                server_info = connection._impl.server_properties
-                info = f"{server_info.get('product', 'unknown')} {server_info.get('version', 'unknown')}"
-                successful_creds.append(f"{username}:{password}")
-                self.ui.StatusTextBox.appendPlainText(f"Credential success: {username}:{password}. Server: {info}")
-                connection.close()
-                break  # Stop after first successful credential
-            except pika.exceptions.AMQPConnectionError as e:
-                self.ui.StatusTextBox.appendPlainText(f"Credential {username}:{password} connection failed: {e}")
-                if "connection refused" in str(e).lower():
+                client.username_pw_set(username, password)
+                client.connect(host, port, keepalive=5)
+                client.loop_start()
+                for _ in range(50):  # Wait up to 5 seconds
+                    if connection_status[0]:
+                        break
+                    import time
+                    time.sleep(0.1)
+                client.loop_stop()
+                client.disconnect()
+
+                if connection_status[0]:
+                    successful_creds.append(f"{username}:{password}")
+                    self.ui.StatusTextBox.appendPlainText(f"Credential success: {username}:{password}")
+                    break  # Stop after first successful credential
+                else:
+                    self.ui.StatusTextBox.appendPlainText(f"Credential failed: {username}:{password}")
+            except Exception as e:
+                self.ui.StatusTextBox.appendPlainText(f"Error testing credential {username}:{password}: {e}")
+                if "connection refused" in str(e).lower() or "no route to host" in str(e).lower():
                     raise Exception("Connection refused")
-            except pika.exceptions.AuthenticationError:
-                self.ui.StatusTextBox.appendPlainText(f"Credential failed: {username}:{password}")
 
         defaults = successful_creds[0] if successful_creds else "None"
         if successful_creds:
             auth_status = "bypassed"
+            info = "MQTT broker (no version info)"
             self.ui.StatusTextBox.appendPlainText(f"Authentication bypassed with credential: {defaults}")
         else:
             self.ui.StatusTextBox.appendPlainText("No default credentials worked.")
